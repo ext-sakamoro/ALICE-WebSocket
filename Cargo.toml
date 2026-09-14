@@ -3,7 +3,7 @@ name = "alice-websocket"
 version = "1.0.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
-license = "AGPL-3.0"
+license = "AGPL-3.0-or-later"
 description = "Pure Rust WebSocket protocol implementation — frame parsing, masking, handshake, ping/pong, close, fragmentation, text/binary, extensions"
 
 [lib]
