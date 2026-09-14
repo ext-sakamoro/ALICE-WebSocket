@@ -1,10 +1,13 @@
 [package]
 name = "alice-websocket"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 license = "AGPL-3.0-or-later"
 description = "Pure Rust WebSocket protocol implementation — frame parsing, masking, handshake, ping/pong, close, fragmentation, text/binary, extensions"
+repository = "https://github.com/ext-sakamoro/ALICE-WebSocket"
+keywords = ["websocket", "rfc6455", "protocol", "framing", "network"]
+categories = ["network-programming", "web-programming", "parser-implementations"]
 
 [lib]
 crate-type = ["rlib"]
