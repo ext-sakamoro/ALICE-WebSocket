@@ -1,25 +1,49 @@
 name: CI
 
+# canonical CI template ([[reference_alice_ci_canonical_template]]) の依存 0 crate 向け
+# 2026-09-17 展開: それまで fmt + actionlint のみで test / clippy が CI に無かった
+# (strict-eval 5、protocol 1.0.x 12 crate) toolchain は rust-toolchain.toml の pin
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: "-D warnings"
 
 jobs:
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
+  test:
+    name: Test + Clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (pedantic、all targets、all features)
+        run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Doc (-D warnings)
+        run: cargo doc --no-deps --all-features
 
   actionlint:
     name: actionlint (workflow YAML 検証)
@@ -31,4 +55,3 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
-
