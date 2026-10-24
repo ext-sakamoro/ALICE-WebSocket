@@ -46,7 +46,7 @@ allow = [
 
 # 本 crate 自身は AGPL (allow-list 外) なので自己 exception
 [[licenses.exceptions]]
-allow = ["AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 name = "alice-websocket"
 
 # ---------------------------------------------------------------------------
