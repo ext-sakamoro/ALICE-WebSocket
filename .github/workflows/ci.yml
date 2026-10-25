@@ -1,6 +1,6 @@
 name: CI
 
-# canonical CI template ([[reference_alice_ci_canonical_template]]) の依存 0 crate 向け
+# 依存 0 crate 向け
 # 2026-09-17 展開: それまで fmt + actionlint のみで test / clippy が CI に無かった
 # (strict-eval 5、protocol 1.0.x 12 crate) toolchain は rust-toolchain.toml の pin
 
