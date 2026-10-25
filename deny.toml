@@ -44,7 +44,7 @@ allow = [
     "OpenSSL",
 ]
 
-# 本 crate 自身は AGPL (allow-list 外) なので自己 exception
+# 本 crate 自身は LicenseRef-Proprietary (allow-list 外) なので自己 exception
 [[licenses.exceptions]]
 allow = ["LicenseRef-Proprietary"]
 name = "alice-websocket"
