@@ -1,6 +1,6 @@
 [package]
 name = "alice-websocket"
-version = "1.0.2"
+version = "2.0.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 license = "LicenseRef-Proprietary"
@@ -12,3 +12,26 @@ categories = ["network-programming", "web-programming", "parser-implementations"
 
 [lib]
 crate-type = ["rlib"]
+
+[features]
+default = []
+# OsMask: mask and handshake keys from the operating system's random source (alice-crypto `random::fill`)
+rng = ["dep:alice-crypto"]
+# client::connect_tls: wss over rustls 0.23 (ring provider, TLS 1.2 + 1.3), Mozilla roots from webpki-roots
+# or caller-supplied roots
+tls = ["dep:rustls", "dep:webpki-roots"]
+
+[dependencies]
+# crates.io has alice-crypto only up to 0.4; 0.7 comes from the git main branch (as in the other ALICE crates).
+# `rng` alone: the OS random source without the AEAD / KDF / hash dependencies
+alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", branch = "main", optional = true, default-features = false, features = ["rng"] }
+# ring provider (no cmake / NASM build); no `logging` so `log` is not linked
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = { version = "1", optional = true }
+
+[dev-dependencies]
+# a test-only certificate generated at test time (no key material in the repository)
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+
+[package.metadata.docs.rs]
+all-features = true

@@ -2,6 +2,10 @@
 //!
 //! Provides frame parsing, masking/unmasking, handshake generation,
 //! ping/pong, close frames, fragmentation, text/binary messages, and extensions.
+//!
+//! The protocol pieces are sans-I/O. [`client::Connection`] drives them over any blocking
+//! `Read + Write` stream for the client role; feature `rng` adds `OsMask` (mask keys from the OS random
+//! source) and feature `tls` adds `client::connect_tls` (wss over rustls).
 
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(
@@ -21,12 +25,14 @@
 pub mod assembler;
 pub mod base64;
 pub mod buffer;
+pub mod client;
 pub mod close_code;
 pub mod close_payload;
 pub mod errors;
 pub mod extensions;
 pub mod frame;
 pub mod handshake;
+pub mod mask;
 pub mod masking;
 pub mod opcode;
 pub mod prelude;
@@ -45,5 +51,6 @@ pub use crate::errors::*;
 pub use crate::extensions::*;
 pub use crate::frame::*;
 pub use crate::handshake::*;
+pub use crate::mask::*;
 pub use crate::masking::*;
 pub use crate::opcode::*;

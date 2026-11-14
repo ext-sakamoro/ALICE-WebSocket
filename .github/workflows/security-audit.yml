@@ -1,6 +1,6 @@
 name: Security & Hygiene
 
-# 依存 0 crate 向け
+# optional 依存 (alice-crypto / rustls / webpki-roots) を持つ crate 向け
 # (sibling stub なし、coverage job なし) 2026-09-17 展開
 #
 # 目的:
@@ -166,7 +166,12 @@ jobs:
       - name: cargo package (.crate を作る)
         # --no-verify: 未 publish の sibling に path dep がある repo では verify step が
         #   registry 解決で落ちる 展開後の隔離 build が本体なので verify は不要
-        run: cargo package --no-verify --allow-dirty
+        # alice-crypto 0.7 is not on crates.io: the package's lock is resolved with the same git branch
+        # Cargo.toml names (cargo package drops the git source)
+        run: >-
+          cargo package --no-verify --allow-dirty
+          --config 'patch.crates-io.alice-crypto.git="https://github.com/ext-sakamoro/ALICE-Crypto"'
+          --config 'patch.crates-io.alice-crypto.branch="main"'
 
       - name: 展開して隔離 build
         run: |
@@ -180,7 +185,13 @@ jobs:
           # 親 workspace を継承すると member 扱いになり、境界を越えた file が
           # 再び見えてしまう (検査の意味が消える) ので単独 package として build
           printf '\n[workspace]\n' >> Cargo.toml
-          cargo check --all-features
+          # alice-crypto 0.7 is not on crates.io: `cargo package` drops its git source, so the
+          # unpacked crate takes it from the same git branch Cargo.toml names
+          cargo check --all-features \
+            --config 'patch.crates-io.alice-crypto.git="https://github.com/ext-sakamoro/ALICE-Crypto"' \
+            --config 'patch.crates-io.alice-crypto.branch="main"'
+          grep -q 'name = "alice-crypto"' Cargo.lock \
+            || { echo "::error::alice-crypto is not in the resolved graph (patch not applied)"; exit 1; }
 
   semver-checks:
     needs: changes

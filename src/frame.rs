@@ -2,6 +2,7 @@
 
 use crate::errors::WsError;
 
+use crate::mask::MaskSource;
 use crate::masking::apply_mask_in_place;
 
 use crate::close_code::CloseCode;
@@ -122,6 +123,17 @@ impl Frame {
         self.serialize_inner(true)
     }
 
+    /// Serialize this frame as a client sends it: masked with a fresh 4-byte key drawn from `mask`
+    /// (RFC 6455 Section 5.3). `self` is not changed; any key already set on it is ignored.
+    #[must_use]
+    pub fn serialize_client(&self, mask: &mut impl MaskSource) -> Vec<u8> {
+        let mut key = [0u8; 4];
+        mask.fill(&mut key);
+        let mut frame = self.clone();
+        frame.set_mask(key);
+        frame.serialize_inner(true)
+    }
+
     fn serialize_inner(&self, apply_mask: bool) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.header_size() + self.payload.len());
 
@@ -190,6 +202,44 @@ impl Frame {
     ///
     /// Returns errors for protocol violations or incomplete data.
     pub fn parse_with_extensions(data: &[u8], allow_rsv: bool) -> Result<(Self, usize), WsError> {
+        Self::parse_impl(data, allow_rsv, usize::MAX, false)
+    }
+
+    /// Parse a frame whose payload may be at most `max_payload` bytes.
+    ///
+    /// The limit is checked as soon as the header shows the payload length, before the mask key and the
+    /// payload have arrived, so a reader never has to buffer an over-limit payload:
+    ///
+    /// - header incomplete (fewer bytes than the length field needs) → [`WsError::Incomplete`];
+    /// - length known and `> max_payload` → [`WsError::PayloadTooLarge`], even if no payload byte is present;
+    /// - length within the limit but the frame incomplete → [`WsError::Incomplete`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Frame::parse`], plus [`WsError::PayloadTooLarge`] for a length over `max_payload`.
+    pub fn parse_limited(data: &[u8], max_payload: usize) -> Result<(Self, usize), WsError> {
+        Self::parse_impl(data, false, max_payload, false)
+    }
+
+    /// Parse a frame received by a client from the server, with the payload limit of
+    /// [`Frame::parse_limited`].
+    ///
+    /// A server must not mask its frames (RFC 6455 Section 5.1); a masked one is refused with
+    /// [`WsError::MaskedServerFrame`] as soon as the second header byte is present.
+    ///
+    /// # Errors
+    ///
+    /// As [`Frame::parse_limited`], plus [`WsError::MaskedServerFrame`].
+    pub fn parse_from_server(data: &[u8], max_payload: usize) -> Result<(Self, usize), WsError> {
+        Self::parse_impl(data, false, max_payload, true)
+    }
+
+    fn parse_impl(
+        data: &[u8],
+        allow_rsv: bool,
+        max_payload: usize,
+        refuse_masked: bool,
+    ) -> Result<(Self, usize), WsError> {
         if data.len() < 2 {
             return Err(WsError::Incomplete);
         }
@@ -208,6 +258,9 @@ impl Frame {
 
         let opcode = Opcode::from_u8(b0 & 0x0F)?;
         let masked = b1 & 0x80 != 0;
+        if refuse_masked && masked {
+            return Err(WsError::MaskedServerFrame);
+        }
         let payload_len_7 = b1 & 0x7F;
 
         let mut offset: usize = 2;
@@ -254,6 +307,10 @@ impl Frame {
             if !fin {
                 return Err(WsError::FragmentedControlFrame);
             }
+        }
+
+        if payload_len > max_payload {
+            return Err(WsError::PayloadTooLarge);
         }
 
         let mut mask_key = [0u8; 4];

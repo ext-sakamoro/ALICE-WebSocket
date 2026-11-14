@@ -2,6 +2,7 @@
 
 use crate::base64::base64_encode;
 use crate::errors::WsError;
+use crate::mask::MaskSource;
 use crate::sha1::sha1;
 
 use std::fmt::Write as _;
@@ -20,6 +21,28 @@ pub fn compute_accept_key(client_key: &str) -> String {
     input.push_str(WEBSOCKET_GUID);
     let hash = sha1(input.as_bytes());
     base64_encode(&hash)
+}
+
+/// A fresh `Sec-WebSocket-Key`: 16 bytes from `source`, base64-encoded (RFC 6455 Section 4.1).
+#[must_use]
+pub fn client_key(source: &mut impl MaskSource) -> String {
+    let mut nonce = [0u8; 16];
+    source.fill(&mut nonce);
+    base64_encode(&nonce)
+}
+
+/// The status code of an HTTP/1.x status line (`HTTP/1.1 101 Switching Protocols` → 101).
+fn status_code(status_line: &str) -> Option<u16> {
+    let mut parts = status_line.split_whitespace();
+    let version = parts.next()?;
+    if !version.starts_with("HTTP/1.") {
+        return None;
+    }
+    let code = parts.next()?;
+    if code.len() != 3 || !code.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    code.parse().ok()
 }
 
 /// Parsed HTTP header: name and value.
@@ -206,7 +229,8 @@ impl HandshakeResponse {
     ///
     /// # Errors
     ///
-    /// Returns `WsError::HandshakeError` on malformed responses.
+    /// Returns `WsError::HandshakeStatus(code)` when the status line is well formed but the code is not 101,
+    /// and `WsError::HandshakeError` on malformed responses.
     pub fn parse(data: &[u8]) -> Result<Self, WsError> {
         let text = std::str::from_utf8(data)
             .map_err(|_| WsError::HandshakeError("invalid UTF-8".into()))?;
@@ -217,10 +241,14 @@ impl HandshakeResponse {
             .next()
             .ok_or_else(|| WsError::HandshakeError("empty response".into()))?;
 
-        if !status_line.contains("101") {
-            return Err(WsError::HandshakeError(format!(
-                "expected 101, got: {status_line}"
-            )));
+        match status_code(status_line) {
+            Some(101) => {}
+            Some(code) => return Err(WsError::HandshakeStatus(code)),
+            None => {
+                return Err(WsError::HandshakeError(format!(
+                    "not an HTTP/1.x status line: {status_line}"
+                )))
+            }
         }
 
         let mut accept = String::new();

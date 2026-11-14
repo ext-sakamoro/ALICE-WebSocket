@@ -1,6 +1,6 @@
 name: CI
 
-# 依存 0 crate 向け
+# optional 依存 (rng: alice-crypto / tls: rustls + webpki-roots) を持つ crate 向け、feature 組ごとに clippy / test / doc
 # 2026-09-17 展開: それまで fmt + actionlint のみで test / clippy が CI に無かった
 # (strict-eval 5、protocol 1.0.x 12 crate) toolchain は rust-toolchain.toml の pin
 
@@ -44,6 +44,28 @@ jobs:
 
       - name: Doc (-D warnings)
         run: cargo doc --no-deps --all-features
+
+      # each optional feature on its own: --all-features hides a module that only compiles
+      # because another feature pulled in a dependency
+      - name: Clippy + Test per feature set (none / rng / tls)
+        run: |
+          set -euo pipefail
+          for f in "--no-default-features" "--no-default-features --features rng" "--no-default-features --features tls"; do
+            echo "== $f"
+            # shellcheck disable=SC2086
+            cargo clippy --all-targets $f -- -W clippy::pedantic -D warnings
+            # shellcheck disable=SC2086
+            cargo test $f
+          done
+
+      - name: Doc per feature set (-D warnings)
+        run: |
+          set -euo pipefail
+          for f in "--no-default-features" "--no-default-features --features rng" "--no-default-features --features tls"; do
+            echo "== $f"
+            # shellcheck disable=SC2086
+            cargo doc --no-deps $f
+          done
 
   actionlint:
     name: actionlint (workflow YAML 検証)
