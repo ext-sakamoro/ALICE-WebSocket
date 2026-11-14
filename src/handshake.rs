@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 // ---------------------------------------------------------------------------
 
 /// The magic GUID used in WebSocket handshakes (RFC 6455 Section 4.2.2).
-pub const WEBSOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-5AB5DC11E545";
+pub const WEBSOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /// Compute the `Sec-WebSocket-Accept` value from a client key.
 #[must_use]

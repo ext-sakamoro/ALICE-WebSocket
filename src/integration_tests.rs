@@ -567,7 +567,7 @@ fn compute_accept_key_rfc_example() {
     // RFC 6455 Section 4.2.2 example
     let key = "dGhlIHNhbXBsZSBub25jZQ==";
     let accept = compute_accept_key(key);
-    assert_eq!(accept, "fPgBbBWxQ5p/OQE7IpV6s8+HiTg=");
+    assert_eq!(accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }
 
 // === Handshake request tests ===
@@ -635,7 +635,7 @@ fn handshake_request_parse_not_get() {
 fn handshake_response_from_key() {
     let key = "dGhlIHNhbXBsZSBub25jZQ==";
     let resp = HandshakeResponse::from_key(key);
-    assert_eq!(resp.accept, "fPgBbBWxQ5p/OQE7IpV6s8+HiTg=");
+    assert_eq!(resp.accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }
 
 #[test]
@@ -645,14 +645,14 @@ fn handshake_response_to_http() {
     assert!(http.contains("HTTP/1.1 101 Switching Protocols\r\n"));
     assert!(http.contains("Upgrade: websocket\r\n"));
     assert!(http.contains("Connection: Upgrade\r\n"));
-    assert!(http.contains("Sec-WebSocket-Accept: fPgBbBWxQ5p/OQE7IpV6s8+HiTg=\r\n"));
+    assert!(http.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"));
 }
 
 #[test]
 fn handshake_response_parse() {
-    let raw = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: fPgBbBWxQ5p/OQE7IpV6s8+HiTg=\r\n\r\n";
+    let raw = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
     let resp = HandshakeResponse::parse(raw).unwrap();
-    assert_eq!(resp.accept, "fPgBbBWxQ5p/OQE7IpV6s8+HiTg=");
+    assert_eq!(resp.accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }
 
 #[test]
@@ -1216,4 +1216,22 @@ fn ping_pong_flow() {
     let (parsed_pong, _) = Frame::parse(&pong_bytes).unwrap();
     assert_eq!(parsed_pong.opcode, Opcode::Pong);
     assert_eq!(parsed_pong.payload, ping_data);
+}
+
+// oracle: RFC 6455 section 1.3 states the GUID literally and works the sample key through to the accept value;
+// both strings below are copied from the RFC text, not computed by this crate
+#[test]
+fn websocket_guid_is_the_rfc_6455_literal() {
+    assert_eq!(
+        crate::handshake::WEBSOCKET_GUID,
+        "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    );
+}
+
+// oracle: RFC 6455 section 4.2.2 (item 5.4) example, an independent server's answer to the same key
+#[test]
+fn client_validates_an_rfc_conforming_server_answer() {
+    let raw = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+    let resp = HandshakeResponse::parse(raw).unwrap();
+    assert!(resp.validate("dGhlIHNhbXBsZSBub25jZQ==").is_ok());
 }
