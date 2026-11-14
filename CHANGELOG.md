@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [2.1.0]
+
+### Added
+
+- `client::TlsStream::connect(tcp, server_name, &TlsConfig)` (feature `tls`): TLS の handshake だけを行い暗号化した stream を返す 利用側はその上で HTTPS の要求や `Connection::connect` を自分で行える `connect_tls` はこの上に組み直した (挙動は同じ)
+
 ## [2.0.0]
 
 ### Changed (破壊的)

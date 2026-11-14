@@ -7,7 +7,7 @@ mod support;
 use std::net::TcpStream;
 use std::sync::Arc;
 
-use alice_websocket::client::{connect_tls, Received, TlsConfig};
+use alice_websocket::client::{connect_tls, Connection, Received, TlsConfig, TlsStream};
 use alice_websocket::{Frame, WsError};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
@@ -142,4 +142,36 @@ fn connect_tls_rejects_an_invalid_server_name() {
     let tcp = dial(&listener.local_addr().unwrap().to_string());
     let r = connect_tls(tcp, "not a name!", &roots, "h", "/", counter_mask());
     assert!(matches!(r, Err(WsError::Tls(_))), "{r:?}");
+}
+
+// TlsStream::connect runs only the TLS handshake: the caller can speak any protocol over the stream,
+// and a later Connection::connect over it is the same as connect_tls
+#[test]
+fn tls_stream_connect_then_websocket_round_trips() {
+    let cert = test_cert();
+    let (addr, server) = spawn_tls_echo(server_config(&cert));
+    let roots = TlsConfig::from_pem_roots(cert.cert.pem().as_bytes()).unwrap();
+    let stream = TlsStream::connect(dial(&addr), "localhost", &roots).expect("tls handshake only");
+    let mut c =
+        Connection::connect(stream, "localhost", "/ws", counter_mask()).expect("ws over tls");
+    c.send_binary(b"raw stream").unwrap();
+    assert_eq!(
+        c.recv_message(1024).unwrap(),
+        Received::Binary(b"raw stream".to_vec())
+    );
+    assert!(server.join().unwrap());
+}
+
+#[test]
+fn tls_stream_connect_rejects_the_certificate_before_any_application_byte() {
+    let cert = test_cert();
+    let (addr, server) = spawn_tls_echo(server_config(&cert));
+    let err = TlsStream::connect(
+        dial(&addr),
+        "localhost",
+        &TlsConfig::webpki_roots().unwrap(),
+    )
+    .expect_err("a test certificate is not under the default roots");
+    assert!(matches!(err, WsError::Certificate(_)), "{err:?}");
+    assert!(!server.join().unwrap());
 }

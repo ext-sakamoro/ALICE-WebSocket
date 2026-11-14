@@ -91,6 +91,34 @@ pub struct TlsStream {
 }
 
 impl TlsStream {
+    /// Run only the TLS handshake on `tcp` for `server_name` (the name the certificate must carry) and
+    /// return the encrypted stream, for callers that speak their own protocol over it (an HTTPS request,
+    /// or a WebSocket handshake through [`Connection::connect`]).
+    ///
+    /// The handshake completes before this returns, so a rejected certificate is reported here and no
+    /// application byte has been sent.
+    ///
+    /// # Errors
+    ///
+    /// [`WsError::Certificate`] when the server's certificate is rejected, [`WsError::Tls`] for other TLS
+    /// failures or an invalid `server_name`, and [`WsError::Io`] for socket errors.
+    pub fn connect(
+        mut tcp: TcpStream,
+        server_name: &str,
+        config: &TlsConfig,
+    ) -> Result<Self, WsError> {
+        let name = ServerName::try_from(server_name.to_owned())
+            .map_err(|e| WsError::Tls(format!("server name {server_name:?}: {e}")))?;
+        let mut conn =
+            ClientConnection::new(Arc::clone(&config.inner), name).map_err(|e| tls_error(&e))?;
+        while conn.is_handshaking() {
+            conn.complete_io(&mut tcp).map_err(handshake_io_error)?;
+        }
+        Ok(Self {
+            inner: StreamOwned::new(conn, tcp),
+        })
+    }
+
     /// The TCP socket under the TLS layer (for timeouts and addresses).
     pub const fn tcp(&self) -> &TcpStream {
         &self.inner.sock
@@ -124,23 +152,14 @@ impl Write for TlsStream {
 /// [`WsError::Certificate`] when the server's certificate is rejected, [`WsError::Tls`] for other TLS
 /// failures or an invalid `server_name`, and the errors of [`Connection::connect`].
 pub fn connect_tls<M: MaskSource>(
-    mut tcp: TcpStream,
+    tcp: TcpStream,
     server_name: &str,
     config: &TlsConfig,
     host: &str,
     path: &str,
     mask: M,
 ) -> Result<Connection<TlsStream, M>, WsError> {
-    let name = ServerName::try_from(server_name.to_owned())
-        .map_err(|e| WsError::Tls(format!("server name {server_name:?}: {e}")))?;
-    let mut conn =
-        ClientConnection::new(Arc::clone(&config.inner), name).map_err(|e| tls_error(&e))?;
-    while conn.is_handshaking() {
-        conn.complete_io(&mut tcp).map_err(handshake_io_error)?;
-    }
-    let stream = TlsStream {
-        inner: StreamOwned::new(conn, tcp),
-    };
+    let stream = TlsStream::connect(tcp, server_name, config)?;
     Connection::connect(stream, host, path, mask)
 }
 
