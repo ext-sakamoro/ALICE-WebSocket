@@ -11,7 +11,9 @@ use alice_websocket::client::{connect_tls, Connection, Received, TlsConfig, TlsS
 use alice_websocket::{Frame, WsError};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
-use support::{counter_mask, dial, spawn_server, ServerConn};
+use std::io::Read;
+
+use support::{counter_mask, dial, spawn_server, FailingMask, ServerConn};
 
 /// A self-signed certificate for `localhost` and its key.
 fn test_cert() -> rcgen::CertifiedKey {
@@ -174,4 +176,49 @@ fn tls_stream_connect_rejects_the_certificate_before_any_application_byte() {
     .expect_err("a test certificate is not under the default roots");
     assert!(matches!(err, WsError::Certificate(_)), "{err:?}");
     assert!(!server.join().unwrap());
+}
+
+/// A failing mask source over TLS: the TLS handshake completes, then `connect_tls` returns
+/// `WsError::Mask` and the server reads zero application bytes (no upgrade request was sent).
+#[test]
+fn connect_tls_with_a_failing_mask_sends_no_application_byte() {
+    let cert = test_cert();
+    let config = server_config(&cert);
+    let (addr, server) = spawn_server(move |tcp: TcpStream| {
+        let mut conn = ServerConnection::new(config).unwrap();
+        let mut tcp = tcp;
+        while conn.is_handshaking() {
+            if conn.complete_io(&mut tcp).is_err() {
+                return None;
+            }
+        }
+        let mut s = StreamOwned::new(conn, tcp);
+        let mut got = Vec::new();
+        let mut chunk = [0u8; 1024];
+        // until the client drops the connection (EOF, or an error for a missing close_notify)
+        while let Ok(n) = s.read(&mut chunk) {
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&chunk[..n]);
+        }
+        Some(got)
+    });
+    let roots = TlsConfig::from_pem_roots(cert.cert.pem().as_bytes()).unwrap();
+    let r = connect_tls(
+        dial(&addr),
+        "localhost",
+        &roots,
+        "localhost",
+        "/ws",
+        FailingMask,
+    );
+    assert!(matches!(r, Err(WsError::Mask(_))), "{r:?}");
+    drop(r);
+    let got = server.join().unwrap().expect("the TLS handshake completed");
+    assert!(
+        got.is_empty(),
+        "{} application bytes reached the server",
+        got.len()
+    );
 }

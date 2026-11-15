@@ -106,9 +106,11 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
     ///
     /// [`WsError::HandshakeStatus`] for a non-101 status, [`WsError::InvalidAccept`] for a wrong accept key,
     /// [`WsError::HandshakeError`] for a malformed or over-long response or a missing upgrade header,
-    /// [`WsError::Io`] when the stream fails or ends.
+    /// [`WsError::Io`] when the stream fails or ends, [`WsError::Mask`] when `mask` cannot produce the key
+    /// (then nothing has been written to `stream`).
     pub fn connect(mut stream: S, host: &str, path: &str, mut mask: M) -> Result<Self, WsError> {
-        let key = client_key(&mut mask);
+        // The key is drawn before anything is written: a failed mask source sends no request.
+        let key = client_key(&mut mask)?;
         let request = HandshakeRequest::new(host, path, &key).to_http();
         stream.write_all(request.as_bytes())?;
         stream.flush()?;
@@ -174,7 +176,8 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
     ///
     /// # Errors
     ///
-    /// [`WsError::Closed`] after a close was sent or received, [`WsError::Io`] when the write fails.
+    /// [`WsError::Closed`] after a close was sent or received, [`WsError::Io`] when the write fails,
+    /// [`WsError::Mask`] when the mask source fails (then nothing has been written).
     pub fn send_binary(&mut self, data: &[u8]) -> Result<(), WsError> {
         self.send_data(&Frame::binary(data.to_vec()))
     }
@@ -209,7 +212,8 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
     ///
     /// [`WsError::InvalidCloseCode`] for a code that must not be sent (1005, 1006, 1015, unassigned ranges),
     /// [`WsError::ControlFrameTooLarge`] for a reason over 123 bytes, [`WsError::Closed`] when a close was
-    /// already sent, [`WsError::Io`] when the write fails.
+    /// already sent, [`WsError::Io`] when the write fails, [`WsError::Mask`] when the mask source fails (then
+    /// nothing has been written and the connection is not marked as closing).
     pub fn close(&mut self, code: CloseCode, reason: &str) -> Result<(), WsError> {
         if !code.is_sendable() {
             return Err(WsError::InvalidCloseCode(code.to_u16()));
@@ -220,8 +224,10 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
         if self.close_sent {
             return Err(WsError::Closed);
         }
+        // Mask first: when the source fails nothing is sent and the connection is not marked as closing.
+        let bytes = Frame::close(Some(code), reason).serialize_client(&mut self.mask)?;
         self.close_sent = true;
-        self.write_frame(&Frame::close(Some(code), reason))
+        self.write_bytes(&bytes)
     }
 
     /// Read the next complete message; no payload (frame or assembled message) may exceed `max_payload` bytes.
@@ -235,7 +241,8 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
     /// [`WsError::PayloadTooLarge`] when a frame header or the assembled message exceeds `max_payload`,
     /// [`WsError::MaskedServerFrame`] for a masked frame, protocol errors from the frame parser, the
     /// assembler and the close payload, [`WsError::Io`] when the stream fails or ends
-    /// (`ErrorKind::UnexpectedEof`), [`WsError::Closed`] after the close was received.
+    /// (`ErrorKind::UnexpectedEof`), [`WsError::Closed`] after the close was received, [`WsError::Mask`]
+    /// when the mask source fails while answering a ping or echoing a close (the answer is then not sent).
     pub fn recv_message(&mut self, max_payload: usize) -> Result<Received, WsError> {
         if self.close_received {
             return Err(WsError::Closed);
@@ -282,10 +289,11 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
                 let payload = ClosePayload::parse(&frame.payload)?;
                 self.close_received = true;
                 if !self.close_sent {
-                    self.close_sent = true;
                     // RFC 6455 Section 5.5.1: echo the status code received.
-                    let echo = Frame::close(payload.as_ref().map(|p| p.code), "");
-                    self.write_frame(&echo)?;
+                    let echo = Frame::close(payload.as_ref().map(|p| p.code), "")
+                        .serialize_client(&mut self.mask)?;
+                    self.close_sent = true;
+                    self.write_bytes(&echo)?;
                 }
                 Ok(Some(Received::Close(payload)))
             }
@@ -339,9 +347,15 @@ impl<S: Read + Write, M: MaskSource> Connection<S, M> {
         self.write_frame(frame)
     }
 
+    /// Mask `frame` and write it; the key is drawn before any byte is written, so a failed mask source
+    /// leaves the stream untouched.
     fn write_frame(&mut self, frame: &Frame) -> Result<(), WsError> {
-        let bytes = frame.serialize_client(&mut self.mask);
-        self.stream.write_all(&bytes)?;
+        let bytes = frame.serialize_client(&mut self.mask)?;
+        self.write_bytes(&bytes)
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), WsError> {
+        self.stream.write_all(bytes)?;
         self.stream.flush()?;
         Ok(())
     }

@@ -6,7 +6,9 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use alice_websocket::{Frame, FrameBuffer, HandshakeRequest, HandshakeResponse, MaskSource};
+use alice_websocket::{
+    Frame, FrameBuffer, HandshakeRequest, HandshakeResponse, MaskError, MaskSource,
+};
 
 /// Bytes handed out in order, wrapping around (tests only: a real client needs unpredictable bytes).
 #[derive(Debug)]
@@ -25,11 +27,22 @@ impl FixedMask {
 }
 
 impl MaskSource for FixedMask {
-    fn fill(&mut self, buf: &mut [u8]) {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), MaskError> {
         for b in buf {
             *b = self.bytes[self.at % self.bytes.len()];
             self.at += 1;
         }
+        Ok(())
+    }
+}
+
+/// A source that always fails (tests the paths that must send nothing without a key).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FailingMask;
+
+impl MaskSource for FailingMask {
+    fn fill(&mut self, _buf: &mut [u8]) -> Result<(), MaskError> {
+        Err(MaskError::Unavailable("test source refuses".into()))
     }
 }
 

@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [3.0.0]
+
+### Changed (破壊的)
+
+- `MaskSource::fill` は `Result<(), MaskError>` を返す 乱数が取れない時に panic せず呼び出し側へ返す 外部の `MaskSource` 実装は戻り値を `Ok(())` / `Err(MaskError)` に変える必要がある
+- `OsMask` の `fill` は OS の乱数源が失敗すると `MaskError::Os` を返す (以前は panic) `OsMask::try_fill` は削除した (`MaskSource::fill` と同じ処理で、失敗を返す経路が 2 本になるため)
+- `handshake::client_key` は `Result<String, MaskError>`、`Frame::serialize_client` は `Result<Vec<u8>, MaskError>` を返す
+- `client::Connection` の `connect` / `send_text` / `send_binary` / `send_ping` / `close` / `recv_message` (ping への pong、close の echo) と `client::connect_tls` は、mask の源が失敗すると `WsError::Mask` を返す この時 stream には 1 byte も書かない (key は書き込みの前に取る)
+- `Connection::close` と close の echo は、mask の key が取れてから close を送った状態にする 失敗した close は送っていない扱いで、再度 `close` を呼べる
+
+### Added
+
+- `mask::MaskError` (`#[non_exhaustive]`、`Display` / `Error`): `Os(RngError)` (feature `rng`) と `Unavailable(String)` (独自の源の失敗)
+- `WsError::Mask(MaskError)` と `From<MaskError> for WsError` (`Error::source` は `MaskError` を返す)
+- `clippy.toml`: ALICE-Law G1 の禁止 method (f32 / f64 の libm 依存の method) の一覧 CI の clippy (`-D warnings`) が `clippy::disallowed_methods` を拒む
+
 ## [2.1.0]
 
 ### Added

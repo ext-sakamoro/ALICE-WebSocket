@@ -16,7 +16,7 @@ use support::{counter_mask, dial, spawn_server, FixedMask, ServerConn};
 #[test]
 fn serialize_client_reproduces_rfc6455_masked_hello() {
     let mut mask = FixedMask::new(&[0x37, 0xfa, 0x21, 0x3d]);
-    let bytes = Frame::text("Hello").serialize_client(&mut mask);
+    let bytes = Frame::text("Hello").serialize_client(&mut mask).unwrap();
     assert_eq!(
         bytes,
         [0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58]
@@ -27,8 +27,8 @@ fn serialize_client_reproduces_rfc6455_masked_hello() {
 fn serialize_client_draws_a_fresh_key_per_frame() {
     let mut mask = counter_mask();
     let frame = Frame::binary(vec![0; 8]);
-    let a = frame.serialize_client(&mut mask);
-    let b = frame.serialize_client(&mut mask);
+    let a = frame.serialize_client(&mut mask).unwrap();
+    let b = frame.serialize_client(&mut mask).unwrap();
     assert_eq!(a[1] & 0x80, 0x80, "mask bit set");
     assert_ne!(a[2..6], b[2..6], "a new key for each frame");
     // the payload on the wire is the masked one, and it decodes back
@@ -41,7 +41,7 @@ fn serialize_client_draws_a_fresh_key_per_frame() {
 #[test]
 fn client_key_is_base64_of_16_source_bytes() {
     let mut src = FixedMask::new(b"the sample nonce");
-    assert_eq!(client_key(&mut src), "dGhlIHNhbXBsZSBub25jZQ==");
+    assert_eq!(client_key(&mut src).unwrap(), "dGhlIHNhbXBsZSBub25jZQ==");
 }
 
 // --- bounded parse -------------------------------------------------------------------------------

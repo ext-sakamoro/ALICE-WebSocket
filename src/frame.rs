@@ -2,7 +2,7 @@
 
 use crate::errors::WsError;
 
-use crate::mask::MaskSource;
+use crate::mask::{MaskError, MaskSource};
 use crate::masking::apply_mask_in_place;
 
 use crate::close_code::CloseCode;
@@ -125,13 +125,16 @@ impl Frame {
 
     /// Serialize this frame as a client sends it: masked with a fresh 4-byte key drawn from `mask`
     /// (RFC 6455 Section 5.3). `self` is not changed; any key already set on it is ignored.
-    #[must_use]
-    pub fn serialize_client(&self, mask: &mut impl MaskSource) -> Vec<u8> {
+    ///
+    /// # Errors
+    ///
+    /// The source's [`MaskError`] when it cannot produce an unpredictable key (no bytes are returned).
+    pub fn serialize_client(&self, mask: &mut impl MaskSource) -> Result<Vec<u8>, MaskError> {
         let mut key = [0u8; 4];
-        mask.fill(&mut key);
+        mask.fill(&mut key)?;
         let mut frame = self.clone();
         frame.set_mask(key);
-        frame.serialize_inner(true)
+        Ok(frame.serialize_inner(true))
     }
 
     fn serialize_inner(&self, apply_mask: bool) -> Vec<u8> {

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::mask::MaskError;
+
 // Errors
 // ---------------------------------------------------------------------------
 
@@ -51,6 +53,14 @@ pub enum WsError {
     Tls(String),
     /// The server's certificate was rejected (unknown issuer, wrong name, expired, ...).
     Certificate(String),
+    /// The mask source could not produce an unpredictable mask key or handshake nonce; nothing was sent.
+    Mask(MaskError),
+}
+
+impl From<MaskError> for WsError {
+    fn from(e: MaskError) -> Self {
+        Self::Mask(e)
+    }
 }
 
 impl From<std::io::Error> for WsError {
@@ -82,8 +92,16 @@ impl fmt::Display for WsError {
             Self::Closed => write!(f, "connection closed"),
             Self::Tls(s) => write!(f, "tls error: {s}"),
             Self::Certificate(s) => write!(f, "certificate rejected: {s}"),
+            Self::Mask(e) => write!(f, "mask source failed: {e}"),
         }
     }
 }
 
-impl std::error::Error for WsError {}
+impl std::error::Error for WsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Mask(e) => Some(e),
+            _ => None,
+        }
+    }
+}

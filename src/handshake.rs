@@ -2,7 +2,7 @@
 
 use crate::base64::base64_encode;
 use crate::errors::WsError;
-use crate::mask::MaskSource;
+use crate::mask::{MaskError, MaskSource};
 use crate::sha1::sha1;
 
 use std::fmt::Write as _;
@@ -24,11 +24,14 @@ pub fn compute_accept_key(client_key: &str) -> String {
 }
 
 /// A fresh `Sec-WebSocket-Key`: 16 bytes from `source`, base64-encoded (RFC 6455 Section 4.1).
-#[must_use]
-pub fn client_key(source: &mut impl MaskSource) -> String {
+///
+/// # Errors
+///
+/// The source's [`MaskError`] when it cannot produce unpredictable bytes (no key is returned).
+pub fn client_key(source: &mut impl MaskSource) -> Result<String, MaskError> {
     let mut nonce = [0u8; 16];
-    source.fill(&mut nonce);
-    base64_encode(&nonce)
+    source.fill(&mut nonce)?;
+    Ok(base64_encode(&nonce))
 }
 
 /// The status code of an HTTP/1.x status line (`HTTP/1.1 101 Switching Protocols` → 101).

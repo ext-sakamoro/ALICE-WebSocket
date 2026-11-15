@@ -5,35 +5,74 @@
 //! [`MaskSource`] is where those bytes come from; `OsMask` (feature `rng`) reads them from the operating
 //! system's random source.
 
+use std::fmt;
+
+/// Why a [`MaskSource`] could not produce unpredictable bytes.
+///
+/// When a source returns this, the buffer it was given must not be used: no frame and no handshake request
+/// is sent with it.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaskError {
+    /// The operating system's random source failed (`OsMask`, feature `rng`).
+    #[cfg(feature = "rng")]
+    Os(alice_crypto::random::RngError),
+    /// Another source could not produce unpredictable bytes (its own description).
+    Unavailable(String),
+}
+
+impl fmt::Display for MaskError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            #[cfg(feature = "rng")]
+            Self::Os(e) => write!(f, "no unpredictable mask bytes: {e}"),
+            Self::Unavailable(s) => write!(f, "no unpredictable mask bytes: {s}"),
+        }
+    }
+}
+
+impl std::error::Error for MaskError {}
+
+#[cfg(feature = "rng")]
+impl From<alice_crypto::random::RngError> for MaskError {
+    fn from(e: alice_crypto::random::RngError) -> Self {
+        Self::Os(e)
+    }
+}
+
 /// A source of mask keys and handshake nonces.
 ///
-/// `fill` must fill the whole buffer with bytes the peer cannot predict. An implementation that cannot do so must
-/// panic rather than return a predictable buffer (zeros, a counter, a clock): a client that sends predictable
-/// masks defeats the purpose of masking (RFC 6455 Section 10.3).
+/// `fill` must either fill the whole buffer with bytes the peer cannot predict and return `Ok(())`, or return
+/// a [`MaskError`]. It must never return `Ok(())` with a predictable buffer (zeros, a counter, a clock): a
+/// client that sends predictable masks defeats the purpose of masking (RFC 6455 Section 10.3). On `Err` the
+/// callers in this crate discard the buffer and send nothing.
 ///
 /// A deterministic implementation is for tests only (for example to reproduce the RFC 6455 Section 5.7 example).
 pub trait MaskSource {
     /// Fill `buf` entirely with unpredictable bytes.
-    fn fill(&mut self, buf: &mut [u8]);
+    ///
+    /// # Errors
+    ///
+    /// [`MaskError`] when unpredictable bytes cannot be produced; `buf` must then not be used.
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), MaskError>;
 }
 
 impl<M: MaskSource + ?Sized> MaskSource for &mut M {
-    fn fill(&mut self, buf: &mut [u8]) {
-        (**self).fill(buf);
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), MaskError> {
+        (**self).fill(buf)
     }
 }
 
 impl<M: MaskSource + ?Sized> MaskSource for Box<M> {
-    fn fill(&mut self, buf: &mut [u8]) {
-        (**self).fill(buf);
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), MaskError> {
+        (**self).fill(buf)
     }
 }
 
 /// Mask keys and handshake nonces from the operating system's random source
 /// (`alice_crypto::random::fill`, which reads the OS source on every call and keeps no state).
 ///
-/// [`MaskSource::fill`] panics when the OS source fails: the trait cannot report the failure, and there is no
-/// safe value to return instead. Use [`OsMask::try_fill`] to handle the failure yourself.
+/// [`MaskSource::fill`] returns [`MaskError::Os`] when the OS source fails.
 #[cfg(feature = "rng")]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsMask;
@@ -45,22 +84,11 @@ impl OsMask {
     pub const fn new() -> Self {
         Self
     }
-
-    /// Fill `buf` from the OS random source, reporting a failure instead of panicking.
-    ///
-    /// # Errors
-    ///
-    /// `alice_crypto::random::RngError` when the OS source is unavailable; `buf` must then not be used.
-    pub fn try_fill(&mut self, buf: &mut [u8]) -> Result<(), alice_crypto::random::RngError> {
-        alice_crypto::random::fill(buf)
-    }
 }
 
 #[cfg(feature = "rng")]
 impl MaskSource for OsMask {
-    fn fill(&mut self, buf: &mut [u8]) {
-        if let Err(e) = self.try_fill(buf) {
-            panic!("OsMask: no unpredictable mask key can be produced ({e}); refusing to send a predictable one");
-        }
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), MaskError> {
+        alice_crypto::random::fill(buf).map_err(MaskError::Os)
     }
 }

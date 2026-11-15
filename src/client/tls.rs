@@ -150,7 +150,8 @@ impl Write for TlsStream {
 /// # Errors
 ///
 /// [`WsError::Certificate`] when the server's certificate is rejected, [`WsError::Tls`] for other TLS
-/// failures or an invalid `server_name`, and the errors of [`Connection::connect`].
+/// failures or an invalid `server_name`, and the errors of [`Connection::connect`] (including
+/// [`WsError::Mask`], in which case no HTTP byte is sent over the TLS stream).
 pub fn connect_tls<M: MaskSource>(
     tcp: TcpStream,
     server_name: &str,
