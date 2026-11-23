@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "alice-crypto"
 version = "0.7.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Crypto?branch=main#fa5c668d8ff91977572c67ea44afeb82983fb649"
+source = "git+https://github.com/ext-sakamoro/ALICE-Crypto?branch=main#a3f3907831b81ffc9aa079f4a2eb160dc63a898d"
 dependencies = [
  "chacha20",
  "getrandom",
